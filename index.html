@@ -234,7 +234,7 @@
                 terms.add(animalName);
 
                 // 2. Add common animal type suffixes
-                const commonSuffixes = [' fish', ' bird', ' snake', ' mammal', ' reptile', ' amphibian', ' insect', ' animal'];
+                const commonSuffixes = [' fish', ' bird', ' snake', ' mammal', ' reptile', ' amphibian', ' insect', ' animal', ' invertebrate', ' chordata', ' species', ' insect', ' arachnid'];
                 for (const suffix of commonSuffixes) {
                     if (!lowerCaseName.endsWith(suffix)) { // Avoid "fish fish"
                         terms.add(animalName + suffix);
@@ -461,7 +461,7 @@
                             lastSearchResults = [wikipediaAnimal]; // Use Wikipedia data as the result
                             await displayResults(lastSearchResults);
                         } else {
-                            displayMessage('No animals found with that name from either API-Ninjas or Wikipedia. Try another one!');
+                            displayMessage('We searched far and wide but couldn\'t find such a creature. Try another one!');
                         }
                     } else {
                         // For API-Ninjas data, enrich with Wikipedia details if available and missing
@@ -504,17 +504,25 @@
                 }
             }
 
-            /** Fetches basic animal details from Wikipedia (summary, scientific name, and attempts to parse characteristics). */
+            /** * Fetches basic animal details from Wikipedia (summary, scientific name, and attempts to parse characteristics).
+             * Now uses category checks for more robust animal identification.
+             */
             async function fetchWikipediaAnimalDetails(animalName) {
-                const searchTerms = getWikipediaSearchTerms(animalName); // Use the new helper function
-                
+                const searchTerms = getWikipediaSearchTerms(animalName); 
+                const animalCategoryKeywords = [
+                    'animal', 'animals', 'mammals', 'fish', 'birds', 'reptiles', 'amphibians', 
+                    'insects', 'arachnids', 'crustaceans', 'molluscs', 'vertebrates', 'chordata', 'invertebrates', 
+                    'species', 'genera', 'families', 'orders', 'classes', 'phyla', 'kingdom animalia'
+                ];
+
                 for (const queryTitle of searchTerms) {
-                    const url = `${wikipediaApiUrl}&prop=extracts|pageprops|info&exintro=1&explaintext=1&redirects=1&titles=${queryTitle}&inprop=url`;
+                    // Request categories along with extract and info
+                    const url = `${wikipediaApiUrl}&prop=extracts|pageprops|info|categories&exintro=1&explaintext=1&redirects=1&titles=${queryTitle}&inprop=url&cllimit=500`; // cllimit to get more categories
                     try {
                         const response = await fetch(url);
                         if (!response.ok) {
                             console.warn(`Wikipedia API (animal details) failed for "${decodeURIComponent(queryTitle)}": ${response.status}`);
-                            continue; // Try next title
+                            continue; 
                         }
                         const data = await response.json();
                         const pages = data.query?.pages;
@@ -524,7 +532,7 @@
                             const page = pages[pageId];
 
                             if (!page.missing) {
-                                const description = page.extract || 'No detailed description available from Wikipedia.';
+                                const description = page.extract || 'No detailed description available, this must be a rare find!';
                                 const wikipediaUrl = page.fullurl || `https://en.wikipedia.org/wiki/${queryTitle}`;
                                 let scientificName = 'N/A';
                                 let diet = 'Not specified';
@@ -532,18 +540,38 @@
                                 let habitat = 'Not specified';
                                 let locations = ['Not specified'];
 
-                                // --- NEW: Ultra-Stricter Animal type validation ---
+                                // --- NEW: Robust Animal type validation using categories ---
+                                let isDefinitelyAnimal = false;
+                                const categories = page.categories || [];
                                 const lowerCaseDescription = description.toLowerCase();
-                                const pageTitle = decodeURIComponent(queryTitle).toLowerCase(); // Get the actual page title
-                                const firstSentence = lowerCaseDescription.split('.')[0];
+                                const pageTitle = decodeURIComponent(queryTitle).toLowerCase(); 
 
-                                const strongAnimalIndicators = [
-                                    'is a species of', 'is a genus of', 'is a family of', 'is an order of', 'is a class of', 'is a phylum of', 'kingdom animalia',
-                                    'is an animal', 'is a mammal', 'is a bird', 'is a fish', 'is a reptile', 'is an amphibian', 'is an insect',
-                                    'vertebrate', 'invertebrate', 'wildlife', 'fauna', 'creature'
-                                ];
-                                
-                                // Keywords that indicate it's NOT an animal (expanded list)
+                                // Check if any category title contains an animal-related keyword
+                                isDefinitelyAnimal = categories.some(cat => {
+                                    const catTitle = cat.title.toLowerCase(); // e.g., "Category:Mammals"
+                                    return animalCategoryKeywords.some(keyword => catTitle.includes(keyword));
+                                });
+
+                                // Fallback: If no strong category, check if the first sentence strongly indicates an animal
+                                if (!isDefinitelyAnimal) {
+                                    const firstSentence = lowerCaseDescription.split('.')[0];
+                                    const strongTextIndicators = [
+                                        'is a species of', 'is a genus of', 'is a family of', 'is an order of', 'is a class of', 'is a phylum of', 
+                                        'kingdom animalia', 'is an animal', 'is a mammal', 'is a bird', 'is a fish', 'is a reptile', 
+                                        'is an amphibian', 'is an insect', 'vertebrate', 'invertebrate', 'wildlife', 'fauna', 'creature'
+                                    ];
+                                    isDefinitelyAnimal = strongTextIndicators.some(indicator => firstSentence.includes(indicator));
+                                }
+
+                                // Final check: If still not identified, but the original animal name is very prominent
+                                if (!isDefinitelyAnimal) {
+                                    const originalNameKeywords = animalName.toLowerCase().split(' ').filter(k => k.length > 0);
+                                    const originalNameInDescription = originalNameKeywords.every(keyword => lowerCaseDescription.includes(keyword));
+                                    const originalNameInTitle = originalNameKeywords.every(keyword => pageTitle.includes(keyword));
+                                    isDefinitelyAnimal = (originalNameInTitle && originalNameInDescription && lowerCaseDescription.length > 100);
+                                }
+
+                                // --- Relaxed Non-Animal Keywords (used to filter out clear non-animals, but less aggressively) ---
                                 const nonAnimalKeywords = [
                                     'disambiguation', 'may refer to', 'list of', 'human', 'person', 'organization', 'company', 'building', 
                                     'vehicle', 'plant', 'fungus', 'bacteria', 'virus', 'disease', 'concept', 'event', 'geographic',
@@ -551,39 +579,29 @@
                                     'engineering', 'technology', 'tool', 'weapon', 'food', 'drink', 'sport', 'game', 'toy', 'clothing',
                                     'material', 'chemical', 'element', 'compound', 'structure', 'geology', 'astronomy', 'celestial body',
                                     'mythology', 'fictional', 'character', 'album', 'song', 'television series', 'band', 'group',
-                                    'school', 'bus', 'pencil', 'object', 'abstract', 'theory', 'system' // Added more specific non-animal terms
+                                    'school', 'bus', 'pencil', 'object', 'abstract', 'theory', 'system' 
                                 ];
-
-                                // Check if any non-animal keywords are prominently present in title or first sentence
-                                const containsNonAnimalKeywords = nonAnimalKeywords.some(keyword => 
-                                    pageTitle.includes(keyword) || firstSentence.includes(keyword)
+                                const containsStrongNonAnimalKeywords = nonAnimalKeywords.some(keyword => 
+                                    pageTitle.includes(keyword) || lowerCaseDescription.includes(keyword)
                                 );
 
-                                // If it contains non-animal keywords, it's likely not an animal
-                                if (containsNonAnimalKeywords) {
-                                    console.log(`Wikipedia page for "${animalName}" (via "${decodeURIComponent(queryTitle)}") contains non-animal keywords. Skipping.`);
-                                    continue; // Skip this page and try the next search term
+                                // If it's identified as an animal, but also contains strong non-animal keywords, it might be a false positive.
+                                // We'll prioritize the positive animal identification unless the non-animal indicator is overwhelming.
+                                if (isDefinitelyAnimal && containsStrongNonAnimalKeywords) {
+                                    // This is a tricky case. For now, if a strong non-animal keyword is present,
+                                    // and it's not explicitly a biological category, we might still skip.
+                                    // For simplicity, let's allow it if it has an animal category, even with a non-animal keyword.
+                                    // If no animal category, and non-animal keyword, then skip.
+                                    const hasDirectAnimalCategory = categories.some(cat => animalCategoryKeywords.includes(cat.title.toLowerCase().replace('category:', '')));
+                                    if (!hasDirectAnimalCategory && containsStrongNonAnimalKeywords) {
+                                        console.log(`Wikipedia page for "${animalName}" (via "${decodeURIComponent(queryTitle)}") contains non-animal keywords and no direct animal category. Skipping.`);
+                                        continue; // Skip this page and try the next search term
+                                    }
+                                } else if (!isDefinitelyAnimal) { // If not identified as animal by any means, skip
+                                    console.log(`Wikipedia page for "${animalName}" (via "${decodeURIComponent(queryTitle)}") does not meet animal criteria. Skipping.`);
+                                    continue;
                                 }
-
-                                // Check for strong biological indicators in the first sentence
-                                const isStronglyAnimalByFirstSentence = strongAnimalIndicators.some(indicator => firstSentence.includes(indicator));
-                                
-                                // Also check if the original animal name (or parts of it) are prominently in the description or title
-                                const originalNameKeywords = animalName.toLowerCase().split(' ').filter(k => k.length > 0);
-                                const originalNameInDescription = originalNameKeywords.every(keyword => lowerCaseDescription.includes(keyword));
-                                const originalNameInTitle = originalNameKeywords.every(keyword => pageTitle.includes(keyword));
-
-                                // Final, very strict validation:
-                                // 1. Must be strongly animal-related by content in the FIRST sentence, OR
-                                // 2. The original name must be very prominent in BOTH the title AND description, AND the description must be substantial.
-                                const isDefinitelyAnimal = isStronglyAnimalByFirstSentence || 
-                                                                    (originalNameInTitle && originalNameInDescription && lowerCaseDescription.length > 100); // Increased length check
-
-                                if (!isDefinitelyAnimal) {
-                                    console.log(`Wikipedia page for "${animalName}" (via "${decodeURIComponent(queryTitle)}") does not meet ultra-strict animal criteria. Skipping.`);
-                                    continue; // Skip this page and try the next search term
-                                }
-                                // --- END NEW: Ultra-Stricter Animal type validation ---
+                                // --- END NEW: Smarter Animal type validation ---
 
 
                                 // Attempt to extract scientific name from the first sentence of the extract
@@ -613,7 +631,7 @@
                                 } else {
                                     lifespanMatch = lowerCaseDescription.match(/(\d+\s*(?:to\s*\d+\s*)?(?:years|year))/i);
                                     if (lifespanMatch && lifespanMatch[1]) {
-                                        lifespan = lifespan[1];
+                                        lifespan = lifespanMatch[1];
                                     } else {
                                         lifespanMatch = lowerCaseDescription.match(/(\d+\s*(?:to\s*\d+\s*)?(?:years|year|months|month|days|day) old)/i); // e.g., "10 years old"
                                         if (lifespanMatch && lifespanMatch[1]) lifespan = lifespan[1];
@@ -850,6 +868,5 @@
             }
         }); // End of DOMContentLoaded
     </script>
-
 </body>
 </html>
