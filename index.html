@@ -145,12 +145,14 @@
                 if (event.key === 'Enter') searchForAnimal();
             });
             backBtn.addEventListener('click', () => {
+                console.log("Back button clicked."); // Log for back button
                 detailView.classList.add('hidden');
                 mainView.classList.remove('hidden');
             });
 
             /** Main function to trigger the animal search. */
             function searchForAnimal() {
+                console.log("searchForAnimal function called."); // Log for search
                 const animalName = animalNameInput.value.trim();
                 if (!animalName) {
                     displayMessage('Please enter an animal name to start exploring!');
@@ -310,7 +312,8 @@
 
                                 const filteredResults = searchResults.filter(result => {
                                     const title = result.title.toLowerCase();
-                                    const snippet = result.snippet ? snippet.toLowerCase() : '';
+                                    // FIX: Corrected snippet access
+                                    const snippet = result.snippet ? result.snippet.toLowerCase() : ''; 
                                     const isImage = /\.(jpg|jpeg|png|gif|svg|webp)$/i.test(result.title);
                                     
                                     const containsAllKeywords = keywords.every(keyword => 
@@ -364,7 +367,8 @@
 
                                 const filteredResults = searchResults.filter(result => {
                                     const title = result.title.toLowerCase();
-                                    const snippet = result.snippet ? result.snippet.toLowerCase() : '';
+                                    // FIX: Corrected snippet access
+                                    const snippet = result.snippet ? result.snippet.toLowerCase() : ''; 
                                     const isImage = /\.(jpg|jpeg|png|gif|svg|webp)$/i.test(result.title);
                                     
                                     const containsAllKeywords = keywords.every(keyword => 
@@ -722,6 +726,7 @@
                 // Add event listeners to the new clickable elements
                 document.querySelectorAll('[data-animal-name]').forEach(el => {
                     el.addEventListener('click', (e) => {
+                        console.log("Animal card clicked:", e.currentTarget.getAttribute('data-animal-name')); // Log for click
                         e.preventDefault();
                         const animalName = e.currentTarget.getAttribute('data-animal-name');
                         const animalData = lastSearchResults.find(animal => animal.name === animalName);
@@ -734,6 +739,7 @@
 
             /** Shows the detail view and populates it with all animal info. */
             async function showDetailView(animal) {
+                console.log("showDetailView function called for:", animal.name); // Log for detail view
                 mainView.classList.add('hidden');
                 detailView.classList.remove('hidden');
                 detailTitle.textContent = animal.name;
