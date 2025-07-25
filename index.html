@@ -234,7 +234,7 @@
                 terms.add(animalName);
 
                 // 2. Add common animal type suffixes
-                const commonSuffixes = [' fish', ' bird', ' snake', ' mammal', ' reptile', ' amphibian', ' insect', ' animal', ' invertebrate', ' chordata', ' species', ' insect', ' arachnid'];
+                const commonSuffixes = [' fish', ' bird', ' snake', ' mammal', ' reptile', ' amphibian', ' insect', ' animal', ' Invertebrate', ' Chordata', ' Species', ' Insect', ' Arachnid'];
                 for (const suffix of commonSuffixes) {
                     if (!lowerCaseName.endsWith(suffix)) { // Avoid "fish fish"
                         terms.add(animalName + suffix);
@@ -257,7 +257,7 @@
                             terms.add(`${animalName} (${cleanSuffix})`);
                             // Also try stripped name with disambiguation if original has suffix
                             if (lowerCaseName.endsWith(suffix.trim())) {
-                                const strippedName = animalName.substring(0, animalName.length - cleanSuffix.length).trim(); // Corrected to use cleanSuffix
+                                const strippedName = animalName.substring(0, cleanSuffix.length - cleanSuffix.length).trim(); // Corrected to use cleanSuffix
                                 if (strippedName) terms.add(`${strippedName} (${cleanSuffix})`);
                             }
                         }
@@ -849,8 +849,14 @@
                         const imgElement = document.createElement('img');
                         imgElement.src = imgUrl;
                         imgElement.alt = `Photo of a ${animal.name}`;
-                        imgElement.className = 'w-full h-full object-cover rounded-lg shadow-md';
+                        imgElement.className = 'w-full h-full object-cover rounded-lg shadow-md cursor-pointer'; // Added cursor-pointer
                         imgElement.onerror = "this.onerror=null;this.src='https://placehold.co/400x300/e0e0e0/555555?text=Image+Load+Error';"; // Fallback for individual image load errors
+                        
+                        // NEW: Add click listener to open image in new window
+                        imgElement.addEventListener('click', () => {
+                            window.open(imgUrl, '_blank');
+                        });
+
                         galleryGrid.appendChild(imgElement);
                     });
                 }
