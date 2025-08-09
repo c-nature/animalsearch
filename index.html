@@ -81,6 +81,18 @@
 
         </div>
     </div>
+    
+    <!-- My Collection View (NEW) -->
+    <div id="collection-view" class="hidden container mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="max-w-5xl mx-auto bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-2xl p-6 md:p-8 shadow-2xl">
+            <h2 class="text-4xl font-bold text-teal-600 dark:text-teal-400 font-title tracking-wider text-center mb-8">My Animal Collection</h2>
+            <div id="collection-grid" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Collection items will be rendered here -->
+            </div>
+            <p id="collection-message" class="text-center text-gray-600 dark:text-gray-400 mt-8"></p>
+        </div>
+    </div>
+
 
     <!-- Detail View -->
     <div id="detail-view" class="hidden container mx-auto p-4 sm:p-6 lg:p-8">
@@ -88,9 +100,14 @@
                 <header class="flex justify-between items-center mb-8">
                     <!-- Applied the new title font class -->
                     <h2 id="detail-title" class="text-4xl font-bold text-teal-600 dark:text-teal-400 font-title tracking-wider"></h2>
-                    <button id="back-btn" class="px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-lg hover:bg-teal-600 focus:outline-none focus:ring-4 focus:ring-teal-500/50">
-                        <i class="fas fa-arrow-left mr-2"></i> Back to Results
-                    </button>
+                    <div class="flex gap-4 items-center">
+                        <button id="add-to-collection-btn" class="px-6 py-3 bg-indigo-500 text-white font-semibold rounded-lg shadow-lg hover:bg-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 hidden">
+                             <i class="fas fa-plus mr-2"></i> Add to Collection
+                        </button>
+                        <button id="back-btn" class="px-6 py-3 bg-teal-500 text-white font-semibold rounded-lg shadow-lg hover:bg-teal-600 focus:outline-none focus:ring-4 focus:ring-teal-500/50">
+                            <i class="fas fa-arrow-left mr-2"></i> Back to Results
+                        </button>
+                    </div>
                 </header>
                 <div id="detail-content" class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <!-- Animal details will be inserted here -->
@@ -128,11 +145,21 @@
             const galleryGrid = document.getElementById('gallery-grid');
             const galleryLoader = document.getElementById('gallery-loader');
 
+            // NEW: Collection elements
+            const navCollectionBtn = document.getElementById('nav-collection');
+            const collectionContainer = document.getElementById('collection-view');
+            const collectionGrid = document.getElementById('collection-grid');
+            const collectionMessage = document.getElementById('collection-message');
+            const addToCollectionBtn = document.getElementById('add-to-collection-btn');
+            
+            const mainClickSoundElement = window.parent.document.getElementById('mainClickSoundElement');
+            const playClickSound = () => { if(mainClickSoundElement) mainClickSoundElement.play(); };
+
             // --- State ---
             let lastSearchResults = [];
+            let currentAnimal = null; // To hold the animal data for the detail view
 
             // --- API Configuration ---
-            // IMPORTANT: Replace 'https://your-render-backend-name.onrender.com' with your actual Render backend URL
             const BACKEND_BASE_URL = 'https://smartypantsbe.onrender.com'; 
             
             const wikipediaApiUrl = 'https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*';
@@ -145,13 +172,30 @@
                 if (event.key === 'Enter') searchForAnimal();
             });
             backBtn.addEventListener('click', () => {
-                console.log("Back button clicked."); // Log for back button
+                playClickSound();
                 detailView.classList.add('hidden');
-                mainView.classList.remove('hidden');
+                // Check if coming from main view or collection view
+                if (mainView.classList.contains('hidden') && !collectionContainer.classList.contains('hidden')) {
+                     collectionContainer.classList.remove('hidden');
+                } else {
+                     mainView.classList.remove('hidden');
+                }
+            });
+             navCollectionBtn.addEventListener('click', async () => {
+                playClickSound();
+                // Hide other views and show collection
+                mainView.classList.add('hidden');
+                detailView.classList.add('hidden');
+                collectionContainer.classList.remove('hidden');
+                
+                await fetchUserCollection();
             });
 
+            addToCollectionBtn.addEventListener('click', addAnimalToCollection);
+            
             /** Main function to trigger the animal search. */
             function searchForAnimal() {
+                playClickSound();
                 console.log("searchForAnimal function called."); // Log for search
                 const animalName = animalNameInput.value.trim();
                 if (!animalName) {
@@ -511,6 +555,195 @@
                     loader.classList.add('hidden');
                 }
             }
+            
+            // NEW: Function to get the user ID from localStorage
+            const getUserId = () => {
+                const user = JSON.parse(localStorage.getItem('user'));
+                return user ? user._id : null;
+            };
+
+            // NEW: Function to fetch user's animal collection
+            async function fetchUserCollection() {
+                const userId = getUserId();
+                if (!userId) {
+                    collectionMessage.textContent = "Please log in on the main SmartyPants website to view your collection.";
+                    collectionGrid.innerHTML = '';
+                    return;
+                }
+                collectionMessage.textContent = "Fetching your collection...";
+                try {
+                    const response = await fetch(`${BACKEND_BASE_URL}/api/user/collection/${userId}`);
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || 'Could not fetch collection.');
+                    }
+                    const data = await response.json();
+                    if (data.status === 'Success') {
+                        // Filter the collection to only show animals
+                        const animalCollection = data.data.filter(item => item.isAnimal);
+                        if (animalCollection.length > 0) {
+                            renderCollectionItems(animalCollection);
+                        } else {
+                            collectionMessage.textContent = "Your animal collection is empty.";
+                            collectionGrid.innerHTML = '';
+                        }
+                    } else {
+                        throw new Error(data.message);
+                    }
+                } catch (error) {
+                    console.error("Error fetching collection:", error);
+                    collectionMessage.textContent = `Error fetching collection: ${error.message}`;
+                }
+            }
+            
+            // NEW: Function to add an animal to the user's collection
+            async function addAnimalToCollection() {
+                 playClickSound();
+                 if (!currentAnimal) {
+                     window.parent.showMessageBox("No animal selected to add.");
+                     return;
+                 }
+                 const userId = getUserId();
+                 if (!userId) {
+                     window.parent.showMessageBox("Please log in on the main SmartyPants website to add to collection.");
+                     return;
+                 }
+                
+                // Add a flag to distinguish animal entries from plant entries
+                const animalDataForCollection = {
+                    ...currentAnimal,
+                    isAnimal: true 
+                };
+
+                 try {
+                     const response = await fetch(`${BACKEND_BASE_URL}/api/user/collection/add`, {
+                         method: 'POST',
+                         headers: { 'Content-Type': 'application/json' },
+                         body: JSON.stringify({
+                             userId: userId,
+                             plantData: animalDataForCollection
+                         })
+                     });
+                     const result = await response.json();
+                     if (result.status === 'Success') {
+                         window.parent.showMessageBox("Animal added to your collection!");
+                         // Award badge for first animal added
+                         if (window.parent && window.parent.awardBadge) {
+                             window.parent.awardBadge('firstanimaladdedtocollection', 'First Animal Added to Collection');
+                         }
+                         // Optional: You could update the collection view if it's open.
+                     } else {
+                         throw new Error(result.message);
+                     }
+                 } catch (error) {
+                     console.error("Error adding animal to collection:", error);
+                     window.parent.showMessageBox(`Error adding animal: ${error.message}`);
+                 }
+            }
+
+
+            /** Displays the fetched animal data on the page. */
+            async function displayResults(animals) {
+                resultsContainer.innerHTML = '';
+                if (animals.length === 0) {
+                    displayMessage('No animals found with that name. Try another one!');
+                    return;
+                }
+                
+                for (const animal of animals) {
+                    const card = document.createElement('div');
+                    card.className = 'bg-gradient-to-br from-white/90 to-gray-100/90 dark:from-gray-800/90 dark:to-gray-900/90 rounded-xl shadow-lg overflow-hidden flex flex-col card-hover-effect';
+                    
+                    const name = animal.name || 'N/A';
+                    const scientificName = animal.taxonomy?.scientific_name || 'N/A';
+                    // Prioritize API-Ninjas data, then Wikipedia parsed data, then 'Not specified'
+                    const diet = animal.characteristics?.diet || 'Not specified';
+                    const lifespan = animal.characteristics?.lifespan || 'Not specified';
+                    const habitat = animal.characteristics?.habitat || 'Not specified';
+                    const locations = (animal.locations && animal.locations.length > 0 && animal.locations[0].toString().toLowerCase() !== 'not specified') ? animal.locations.join(', ') : 'Not specified';
+                    const wikipediaUrl = animal.wikipedia_url || `https://en.wikipedia.org/wiki/${encodeURIComponent(name)}`;
+
+
+                    const imageUrl = await fetchAnimalImage(name);
+                    let imageContainer;
+                    if (imageUrl) {
+                        imageContainer = document.createElement('div'); 
+                        imageContainer.className = 'block';
+                        imageContainer.innerHTML = `<img src="${imageUrl}" alt="Photo of a ${name}" class="w-full h-48 object-cover" onerror="this.onerror=null;this.src='https://placehold.co/400x300/e0e0e0/555555?text=Image+Not+Found';">`;
+                    } else {
+                        imageContainer = document.createElement('div');
+                        imageContainer.className = 'w-full h-48 bg-gray-200 dark:bg-gray-700 flex items-center justify-center';
+                        imageContainer.innerHTML = `<i class="fas fa-image fa-3x text-gray-400"></i><p class="ml-2 text-gray-500">No Image</p>`;
+                    }
+
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'p-6 flex-grow';
+                    contentDiv.innerHTML = `
+                        <a href="#" class="cursor-pointer" data-animal-name="${name}">
+                            <h2 class="text-2xl font-bold text-teal-700 dark:text-teal-300 mb-2 hover:underline">${name}</h2>
+                        </a>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 font-medium mb-5 italic">${scientificName}</p>
+                        <div class="space-y-4 text-gray-800 dark:text-gray-200">
+                            <p><i class="fas fa-utensils w-6 text-yellow-500"></i> <strong class="font-semibold">Diet:</strong> ${diet}</p>
+                            <p><i class="fas fa-map-marker-alt w-6 text-red-500"></i> <strong class="font-semibold">Locations:</strong> ${locations}</p>
+                            <p><i class="fas fa-heartbeat w-6 text-green-500"></i> <strong class="font-semibold">Lifespan:</strong> ${lifespan}</p>
+                            <p><i class="fas fa-home w-6 text-indigo-500"></i> <strong class="font-semibold">Habitat:</strong> ${habitat}</p>
+                        </div>
+                    `;
+                    
+                    card.appendChild(imageContainer);
+                    card.appendChild(contentDiv);
+                    resultsContainer.appendChild(card);
+                }
+                
+                // Add event listeners to the new clickable elements
+                document.querySelectorAll('[data-animal-name]').forEach(el => {
+                    el.addEventListener('click', (e) => {
+                        playClickSound();
+                        e.preventDefault();
+                        const animalName = e.currentTarget.getAttribute('data-animal-name');
+                        const animalData = lastSearchResults.find(animal => animal.name === animalName);
+                        if (animalData) {
+                            currentAnimal = animalData; // Store the animal data for the detail view
+                            showDetailView(animalData);
+                        }
+                    });
+                });
+            }
+            
+            // NEW: Function to render items in the collection view
+            async function renderCollectionItems(animals) {
+                collectionGrid.innerHTML = '';
+                 if (animals.length === 0) {
+                    collectionMessage.textContent = 'Your collection is empty.';
+                    return;
+                }
+                collectionMessage.textContent = '';
+                for (const animal of animals) {
+                     const card = document.createElement('div');
+                     card.className = 'bg-gradient-to-br from-white/90 to-gray-100/90 dark:from-gray-800/90 dark:to-gray-900/90 rounded-xl shadow-lg overflow-hidden flex flex-col card-hover-effect cursor-pointer';
+
+                     const name = animal.name || 'N/A';
+                     const scientificName = animal.taxonomy?.scientific_name || 'N/A';
+
+                     card.innerHTML = `
+                         <img src="${animal.imageUrl || 'https://placehold.co/400x300/e0e0e0/555555?text=Image+Not+Found'}" alt="Photo of a ${name}" class="w-full h-48 object-cover" onerror="this.onerror=null;this.src='https://placehold.co/400x300/e0e0e0/555555?text=Image+Not+Found';">
+                         <div class="p-6 flex-grow">
+                             <h2 class="text-2xl font-bold text-teal-700 dark:text-teal-300 mb-2">${name}</h2>
+                             <p class="text-sm text-gray-500 dark:text-gray-400 font-medium italic">${scientificName}</p>
+                         </div>
+                     `;
+                     
+                     card.addEventListener('click', () => {
+                         playClickSound();
+                         currentAnimal = animal; // Set the current animal for detail view
+                         showDetailView(animal);
+                     });
+                     
+                     collectionGrid.appendChild(card);
+                }
+            }
+
 
             /** * Fetches basic animal details from Wikipedia (summary, scientific name, and attempts to parse characteristics).
              * Now uses category checks for more robust animal identification.
@@ -599,10 +832,6 @@
                                 // If no animal category, and non-animal keyword, then skip.
                                 const hasDirectAnimalCategory = categories.some(cat => animalCategoryKeywords.includes(cat.title.toLowerCase().replace('category:', '')));
                                 if (isDefinitelyAnimal && containsStrongNonAnimalKeywords) {
-                                    // This is a tricky case. For now, if a strong non-animal keyword is present,
-                                    // and it's not explicitly a biological category, we might still skip.
-                                    // For simplicity, let's allow it if it has an animal category, even with a non-animal keyword.
-                                    // If no animal category, and non-animal keyword, then skip.
                                     const hasDirectAnimalCategory = categories.some(cat => animalCategoryKeywords.includes(cat.title.toLowerCase().replace('category:', '')));
                                     if (!hasDirectAnimalCategory && containsStrongNonAnimalKeywords) {
                                         console.log(`Wikipedia page for "${animalName}" (via "${decodeURIComponent(queryTitle)}") contains non-animal keywords and no direct animal category. Skipping.`);
@@ -700,11 +929,12 @@
 
             /** Displays the fetched animal data on the page. */
             async function displayResults(animals) {
+                resultsContainer.innerHTML = '';
                 if (animals.length === 0) {
                     displayMessage('No animals found with that name. Try another one!');
                     return;
                 }
-
+                
                 for (const animal of animals) {
                     const card = document.createElement('div');
                     card.className = 'bg-gradient-to-br from-white/90 to-gray-100/90 dark:from-gray-800/90 dark:to-gray-900/90 rounded-xl shadow-lg overflow-hidden flex flex-col card-hover-effect';
@@ -722,12 +952,11 @@
                     const imageUrl = await fetchAnimalImage(name);
                     let imageContainer;
                     if (imageUrl) {
-                        // Removed <a> tag around image
                         imageContainer = document.createElement('div'); 
-                        imageContainer.className = 'block'; // Keep block display for image
+                        imageContainer.className = 'block';
                         imageContainer.innerHTML = `<img src="${imageUrl}" alt="Photo of a ${name}" class="w-full h-48 object-cover" onerror="this.onerror=null;this.src='https://placehold.co/400x300/e0e0e0/555555?text=Image+Not+Found';">`;
                     } else {
-                        imageContainer = document.createElement('div'); // Placeholder
+                        imageContainer = document.createElement('div');
                         imageContainer.className = 'w-full h-48 bg-gray-200 dark:bg-gray-700 flex items-center justify-center';
                         imageContainer.innerHTML = `<i class="fas fa-image fa-3x text-gray-400"></i><p class="ml-2 text-gray-500">No Image</p>`;
                     }
@@ -745,31 +974,250 @@
                             <p><i class="fas fa-heartbeat w-6 text-green-500"></i> <strong class="font-semibold">Lifespan:</strong> ${lifespan}</p>
                             <p><i class="fas fa-home w-6 text-indigo-500"></i> <strong class="font-semibold">Habitat:</strong> ${habitat}</p>
                         </div>
-                        <!-- Wikipedia link removed from here, now only in detail view -->
                     `;
                     
                     card.appendChild(imageContainer);
                     card.appendChild(contentDiv);
                     resultsContainer.appendChild(card);
                 }
+                
                 // Add event listeners to the new clickable elements
                 document.querySelectorAll('[data-animal-name]').forEach(el => {
                     el.addEventListener('click', (e) => {
-                        console.log("Animal card clicked:", e.currentTarget.getAttribute('data-animal-name')); // Log for click
+                        playClickSound();
                         e.preventDefault();
                         const animalName = e.currentTarget.getAttribute('data-animal-name');
                         const animalData = lastSearchResults.find(animal => animal.name === animalName);
                         if (animalData) {
+                            currentAnimal = animalData; // Store the animal data for the detail view
                             showDetailView(animalData);
                         }
                     });
                 });
             }
+            
+            // NEW: Function to render items in the collection view
+            async function renderCollectionItems(animals) {
+                collectionGrid.innerHTML = '';
+                 if (animals.length === 0) {
+                    collectionMessage.textContent = 'Your collection is empty.';
+                    return;
+                }
+                collectionMessage.textContent = '';
+                for (const animal of animals) {
+                     const card = document.createElement('div');
+                     card.className = 'bg-gradient-to-br from-white/90 to-gray-100/90 dark:from-gray-800/90 dark:to-gray-900/90 rounded-xl shadow-lg overflow-hidden flex flex-col card-hover-effect cursor-pointer';
+
+                     const name = animal.name || 'N/A';
+                     const scientificName = animal.taxonomy?.scientific_name || 'N/A';
+
+                     card.innerHTML = `
+                         <img src="${animal.imageUrl || 'https://placehold.co/400x300/e0e0e0/555555?text=Image+Not+Found'}" alt="Photo of a ${name}" class="w-full h-48 object-cover" onerror="this.onerror=null;this.src='https://placehold.co/400x300/e0e0e0/555555?text=Image+Not+Found';">
+                         <div class="p-6 flex-grow">
+                             <h2 class="text-2xl font-bold text-teal-700 dark:text-teal-300 mb-2">${name}</h2>
+                             <p class="text-sm text-gray-500 dark:text-gray-400 font-medium italic">${scientificName}</p>
+                         </div>
+                     `;
+                     
+                     card.addEventListener('click', () => {
+                         playClickSound();
+                         currentAnimal = animal; // Set the current animal for detail view
+                         showDetailView(animal);
+                     });
+                     
+                     collectionGrid.appendChild(card);
+                }
+            }
+
+
+            /** * Fetches basic animal details from Wikipedia (summary, scientific name, and attempts to parse characteristics).
+             * Now uses category checks for more robust animal identification.
+             */
+            async function fetchWikipediaAnimalDetails(animalName) {
+                const searchTerms = getWikipediaSearchTerms(animalName); 
+                const animalCategoryKeywords = [
+                    'animal', 'animals', 'mammals', 'fish', 'birds', 'reptiles', 'amphibians', 
+                    'insects', 'arachnids', 'crustaceans', 'molluscs', 'vertebrates', 'chordata', 'invertebrates', 
+                    'species', 'genera', 'families', 'orders', 'classes', 'phyla', 'kingdom animalia'
+                ];
+
+                for (const queryTitle of searchTerms) {
+                    // Request categories along with extract and info
+                    const url = `${wikipediaApiUrl}&prop=extracts|pageprops|info|categories&exintro=1&explaintext=1&redirects=1&titles=${queryTitle}&inprop=url&cllimit=500`; // cllimit to get more categories
+                    try {
+                        const response = await fetch(url);
+                        if (!response.ok) {
+                            console.warn(`Wikipedia API (animal details) failed for "${decodeURIComponent(queryTitle)}": ${response.status}`);
+                            continue; 
+                        }
+                        const data = await response.json();
+                        const pages = data.query?.pages;
+
+                        if (pages) {
+                            const pageId = Object.keys(pages)[0];
+                            const page = pages[pageId];
+
+                            if (!page.missing) {
+                                const description = page.extract || 'No detailed description available, this must be a rare find!';
+                                const wikipediaUrl = page.fullurl || `https://en.wikipedia.org/wiki/${queryTitle}`;
+                                let scientificName = 'N/A';
+                                let diet = 'Not specified';
+                                let lifespan = 'Not specified';
+                                let habitat = 'Not specified';
+                                let locations = ['Not specified'];
+
+                                // --- NEW: Robust Animal type validation using categories ---
+                                let isDefinitelyAnimal = false;
+                                const categories = page.categories || [];
+                                const lowerCaseDescription = description.toLowerCase();
+                                const pageTitle = decodeURIComponent(queryTitle).toLowerCase(); 
+
+                                // Check if any category title contains an animal-related keyword
+                                isDefinitelyAnimal = categories.some(cat => {
+                                    const catTitle = cat.title.toLowerCase(); // e.g., "Category:Mammals"
+                                    return animalCategoryKeywords.some(keyword => catTitle.includes(keyword));
+                                });
+
+                                // Fallback: If no strong category, check if the first sentence strongly indicates an animal
+                                if (!isDefinitelyAnimal) {
+                                    const firstSentence = lowerCaseDescription.split('.')[0];
+                                    const strongTextIndicators = [
+                                        'is a species of', 'is a genus of', 'is a family of', 'is an order of', 'is a class of', 'is a phylum of', 
+                                        'kingdom animalia', 'is an animal', 'is a mammal', 'is a bird', 'is a fish', 'is a reptile', 
+                                        'is an amphibian', 'is an insect', 'vertebrate', 'invertebrate', 'wildlife', 'fauna', 'creature'
+                                    ];
+                                    isDefinitelyAnimal = strongTextIndicators.some(indicator => firstSentence.includes(indicator));
+                                }
+
+                                // Final check: If still not identified, but the original animal name is very prominent
+                                if (!isDefinitelyAnimal) {
+                                    const originalNameKeywords = animalName.toLowerCase().split(' ').filter(k => k.length > 0);
+                                    const originalNameInDescription = originalNameKeywords.every(keyword => lowerCaseDescription.includes(keyword));
+                                    const originalNameInTitle = originalNameKeywords.every(keyword => pageTitle.includes(keyword));
+                                    isDefinitelyAnimal = (originalNameInTitle && originalNameInDescription && lowerCaseDescription.length > 100);
+                                }
+
+                                // --- Relaxed Non-Animal Keywords (used to filter out clear non-animals, but less aggressively) ---
+                                const nonAnimalKeywords = [
+                                    'disambiguation', 'may refer to', 'list of', 'human', 'person', 'organization', 'company', 'building', 
+                                    'vehicle', 'plant', 'fungus', 'bacteria', 'virus', 'disease', 'concept', 'event', 'geographic',
+                                    'software', 'music', 'film', 'book', 'art', 'history', 'mathematics', 'physics', 'chemistry',
+                                    'engineering', 'technology', 'tool', 'weapon', 'food', 'drink', 'sport', 'game', 'toy', 'clothing',
+                                    'material', 'chemical', 'element', 'compound', 'structure', 'geology', 'astronomy', 'celestial body',
+                                    'mythology', 'fictional', 'character', 'album', 'song', 'television series', 'band', 'group',
+                                    'school', 'bus', 'pencil', 'object', 'abstract', 'theory', 'system' 
+                                ];
+                                const containsStrongNonAnimalKeywords = nonAnimalKeywords.some(keyword => 
+                                    pageTitle.includes(keyword) || lowerCaseDescription.includes(keyword)
+                                );
+
+                                // If it's identified as an animal, but also contains strong non-animal keywords, it might be a false positive.
+                                // We'll prioritize the positive animal identification unless the non-animal indicator is overwhelming.
+                                // For simplicity, let's allow it if it has an animal category, even with a non-animal keyword.
+                                // If no animal category, and non-animal keyword, then skip.
+                                const hasDirectAnimalCategory = categories.some(cat => animalCategoryKeywords.includes(cat.title.toLowerCase().replace('category:', '')));
+                                if (isDefinitelyAnimal && containsStrongNonAnimalKeywords) {
+                                    const hasDirectAnimalCategory = categories.some(cat => animalCategoryKeywords.includes(cat.title.toLowerCase().replace('category:', '')));
+                                    if (!hasDirectAnimalCategory && containsStrongNonAnimalKeywords) {
+                                        console.log(`Wikipedia page for "${animalName}" (via "${decodeURIComponent(queryTitle)}") contains non-animal keywords and no direct animal category. Skipping.`);
+                                        continue; // Skip this page and try the next search term
+                                    }
+                                } else if (!isDefinitelyAnimal) { // If not identified as animal by any means, skip
+                                    console.log(`Wikipedia page for "${animalName}" (via "${decodeURIComponent(queryTitle)}") does not meet animal criteria. Skipping.`);
+                                    continue;
+                                }
+                                // --- END NEW: Smarter Animal type validation ---
+
+
+                                // Attempt to extract scientific name from the first sentence of the extract
+                                const scientificNameMatch = description.match(/\b([A-Z][a-z]+)\s([a-z]+)\b/);
+                                if (scientificNameMatch && scientificNameMatch[0]) {
+                                    scientificName = scientificNameMatch[0];
+                                }
+
+                                // --- Heuristic parsing for characteristics from the description ---
+                                // Diet: Look for patterns related to diet
+                                let dietMatch = lowerCaseDescription.match(/(?:diet is|eats|feeds on|primarily eats|omnivorous|carnivorous|herbivorous|insectivorous|piscivorous)(?: an?| the)?\s*([\w\s,.\-()]+?)(?:\.|\n|;|,|$)/i);
+                                if (dietMatch && dietMatch[1]) {
+                                    diet = dietMatch[1].trim();
+                                    diet = diet.replace(/^(a |an |the |typically |primarily |mainly |various |a variety of )/g, '').trim();
+                                    if (diet.length > 50) diet = diet.substring(0, 50) + '...'; 
+                                } else {
+                                    dietMatch = lowerCaseDescription.match(/(carnivore|herbivore|omnivore|insectivore|piscivore)s?/i); // Broader match for diet type
+                                    if (dietMatch) diet = dietMatch[0];
+                                }
+
+
+                                // Lifespan: Look for patterns related to lifespan
+                                let lifespanMatch = lowerCaseDescription.match(/(?:lifespan is|life span is|lives for|can live for|live up to|longevity of)\s*([\d\s\w]+?\s*(?:years|year|months|month|days|day) of age)?/i);
+                                if (lifespanMatch && lifespanMatch[1]) {
+                                    lifespan = lifespanMatch[1].trim();
+                                    if (lifespan.length > 30) lifespan = lifespan.substring(0, 30) + '...'; 
+                                } else {
+                                    lifespanMatch = lowerCaseDescription.match(/(\d+\s*(?:to\s*\d+\s*)?(?:years|year))/i);
+                                    if (lifespanMatch && lifespanMatch[1]) {
+                                        lifespan = lifespanMatch[1];
+                                    } else {
+                                        lifespanMatch = lowerCaseDescription.match(/(\d+\s*(?:to\s*\d+\s*)?(?:years|year|months|month|days|day) old)/i); // e.g., "10 years old"
+                                        if (lifespanMatch && lifespanMatch[1]) lifespan = lifespan[1];
+                                    }
+                                }
+
+
+                                // Habitat: Look for patterns related to habitat
+                                let habitatMatch = lowerCaseDescription.match(/(?:habitat is|found in|lives in|inhabits|native to|occurs in)(?: the)?\s*([\w\s,.\-()]+?)(?:\.|\n|;|,|$)/i);
+                                if (habitatMatch && habitatMatch[1]) {
+                                    habitat = habitatMatch[1].trim();
+                                     if (habitat.length > 70) habitat = habitat.substring(0, 70) + '...'; 
+                                } else {
+                                    habitatMatch = lowerCaseDescription.match(/inhabits (.*?)(?:\.|\n|;|,|$)/i);
+                                    if (habitatMatch && habitatMatch[1]) {
+                                        habitat = habitatMatch[1].trim();
+                                        if (habitat.length > 70) habitat = habitat.substring(0, 70) + '...'; 
+                                    }
+                                }
+
+                                // Locations (simple parsing, often complex in text)
+                                let locationMatch = lowerCaseDescription.match(/(native to|found across|distributed throughout|occurs in|range includes)(.*?)(?:\.|\n|;|,|$)/i);
+                                if (locationMatch && locationMatch[2]) {
+                                    let extractedLocations = locationMatch[2].trim().split(/,\s*|\s*and\s*|(?=\s*in\s*(?:the\s*)?[A-Z])/).map(loc => loc.trim()).filter(loc => loc.length > 0); // More robust split
+                                    if (extractedLocations.length > 0) {
+                                        locations = extractedLocations.slice(0, 3);
+                                        if (extractedLocations.length > 3) locations.push('...');
+                                    }
+                                }
+
+                                // Construct a basic animal object similar to API-Ninjas structure
+                                return {
+                                    name: animalName,
+                                    taxonomy: {
+                                        scientific_name: scientificName,
+                                    },
+                                    characteristics: {
+                                        description: description,
+                                        diet: diet,
+                                        lifespan: lifespan,
+                                        habitat: habitat
+                                    },
+                                    locations: locations,
+                                    wikipedia_url: wikipediaUrl // Add the Wikipedia URL here
+                                };
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`Error fetching animal details from Wikipedia for "${decodeURIComponent(queryTitle)}":`, error);
+                    }
+                }
+                return null; // Return null if no suitable Wikipedia page is found after all attempts
+            }
+
 
             /** Shows the detail view and populates it with all animal info. */
             async function showDetailView(animal) {
+                playClickSound();
                 console.log("showDetailView function called for:", animal.name); // Log for detail view
                 mainView.classList.add('hidden');
+                collectionContainer.classList.add('hidden'); // Hide collection view
                 detailView.classList.remove('hidden');
                 detailTitle.textContent = animal.name;
                 detailContent.innerHTML = '';
@@ -873,7 +1321,7 @@
                     });
                 }
             }
-
+             
             /** Displays a message to the user. */
             function displayMessage(message) {
                 messageBox.textContent = message;
