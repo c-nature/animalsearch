@@ -329,6 +329,7 @@
                                         const infoResponse = await fetch(infoUrl);
                                         const infoData = await infoResponse.json();
                                         const infoPages = infoData.query?.pages;
+
                                         if (infoPages) {
                                             const infoPageId = Object.keys(infoPages)[0];
                                             const infoPage = infoPages[infoPageId];
@@ -376,7 +377,7 @@
                                     );
                                     
                                     const isRelevant = (keywords.length > 1 && containsAllKeywords) || 
-                                                                    (keywords.length === 1 && (title.includes(keywords[0]) || snippet.includes(keywords[0])));
+                                                             (keywords.length === 1 && (title.includes(keywords[0]) || snippet.includes(keywords[0])));
 
                                     return isImage && isRelevant && !processedTitles.has(result.title);
                                 });
@@ -453,6 +454,13 @@
                     }
                     const data = await response.json();
                     
+                    // Award the badge if the search was successful
+                    if (data.length > 0) {
+                        if (window.parent && window.parent.awardBadge) {
+                            window.parent.awardBadge('firstsearchanimalexplorer', 'First Search Animal Explorer');
+                        }
+                    }
+
                     // If API-Ninjas returns no data, try Wikipedia for basic info
                     if (data.length === 0) {
                         console.log(`API-Ninjas proxy found no data for "${animalName}". Attempting Wikipedia fallback.`);
@@ -587,6 +595,9 @@
 
                                 // If it's identified as an animal, but also contains strong non-animal keywords, it might be a false positive.
                                 // We'll prioritize the positive animal identification unless the non-animal indicator is overwhelming.
+                                // For simplicity, let's allow it if it has an animal category, even with a non-animal keyword.
+                                // If no animal category, and non-animal keyword, then skip.
+                                const hasDirectAnimalCategory = categories.some(cat => animalCategoryKeywords.includes(cat.title.toLowerCase().replace('category:', '')));
                                 if (isDefinitelyAnimal && containsStrongNonAnimalKeywords) {
                                     // This is a tricky case. For now, if a strong non-animal keyword is present,
                                     // and it's not explicitly a biological category, we might still skip.
@@ -809,6 +820,7 @@
                     for (const [key, value] of Object.entries(animal.taxonomy)) {
                         if (key !== 'scientific_name' && value) {
                             const label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                            const iconInfo = iconMap['default']; // Use a generic icon for taxonomy
                             taxonomyHtml += `<p><i class="fas fa-sitemap w-6 text-gray-500"></i> <strong class="font-semibold">${label}:</strong> ${value}</p>`;
                         }
                     }
