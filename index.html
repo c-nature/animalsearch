@@ -160,7 +160,8 @@
 
     <!-- Badge Sound Effect -->
     <audio id="badgeSoundElement" preload="auto">
-        <source src="https://c-nature.github.io/smartypants/badge.wav" type="audio/wav">
+        <!-- CORRECTED: Use a URL that's relative to the main domain for better compatibility -->
+        <source src="../badge.wav" type="audio/wav">
     </audio>
 
 
@@ -195,11 +196,11 @@
             // --- State ---
             let lastSearchResults = [];
             let currentAnimal = null;
+            // CORRECTED: This variable is now set dynamically from the URL parameters.
+            let BACKEND_BASE_URL = ''; 
+            let USER_ID = null;
+            let AUTH_TOKEN = null;
 
-            // --- API Configuration ---
-            const BACKEND_BASE_URL = 'https://smartypantsbe.onrender.com'; 
-            const wikipediaApiUrl = 'https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*';
-            const commonsApiUrl = 'https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*';
 
             // --- Badge Awarding Logic ---
             function showBadgeNotification(badgeName, badgeDisplayName) {
@@ -215,7 +216,8 @@
                 if (typeof confetti === 'function') {
                     confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
                 }
-                badgeNotificationImg.src = `https://c-nature.github.io/smartypants/Badges/${badgeName}.png`;
+                // CORRECTED: Badge image URL is now relative to the current host
+                badgeNotificationImg.src = `Badges/${badgeName}.png`;
                 badgeNotificationName.textContent = badgeDisplayName;
                 badgeNotification.classList.remove('hidden');
                 setTimeout(() => { badgeNotification.classList.add('show'); }, 10);
@@ -226,40 +228,56 @@
             }
 
             async function awardBadge(badgeName, badgeDisplayName) {
-                if (window.self !== window.top && window.parent.awardBadge) {
-                    console.log(`Awarding badge '${badgeName}' via parent window.`);
-                    window.parent.awardBadge(badgeName, badgeDisplayName);
+                if (!BACKEND_BASE_URL) {
+                    console.error("Cannot award badge: Backend URL not set.");
                     return;
                 }
-                console.log(`Awarding badge '${badgeName}' via direct API call.`);
+                const userString = localStorage.getItem('user');
+                const token = localStorage.getItem('token');
+                
+                if (!token || !userString) {
+                    console.log("Badge Award: User not logged in.");
+                    return;
+                }
+                
+                const user = JSON.parse(userString);
+                // Check if user already has the badge in localStorage to prevent unnecessary API calls
+                if (user.badges && user.badges.includes(badgeName)) {
+                    console.log(`Badge '${badgeName}' already awarded.`);
+                    // If the user has it, just show the animation and don't make the API call.
+                    showBadgeNotification(badgeName, badgeDisplayName);
+                    return;
+                }
+
                 try {
-                    const token = localStorage.getItem('token');
-                    const userString = localStorage.getItem('user');
-                    if (!token || !userString) {
-                        console.log("Direct badge award failed: User not logged in.");
-                        return;
-                    }
-                    const user = JSON.parse(userString);
-                    if (user.badges && user.badges.includes(badgeName)) {
-                        console.log(`Direct badge award skipped: User already has badge '${badgeName}'.`);
-                        return;
-                    }
-                    const response = await fetch(`${BACKEND_BASE_URL}/api/user/award-badge`, {
+                    const response = await fetch(`${BACKEND_BASE_URL}/award-badge`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
                         body: JSON.stringify({ userId: user._id, badgeName: badgeName })
                     });
+
                     const result = await response.json();
+
                     if (result.status === "Success" && !result.alreadyAwarded) {
-                        console.log(`Badge '${badgeName}' awarded successfully via API.`);
-                        user.badges.push(badgeName);
+                        // Update the user object in localStorage with the new badge list
+                        user.badges = result.data.badges;
                         localStorage.setItem('user', JSON.stringify(user));
+
+                        // Show a notification
                         showBadgeNotification(badgeName, badgeDisplayName);
+                        
+                        // Optionally, update the profile view if it's open
+                        if (window.parent && window.parent.updateAuthButtons) {
+                            window.parent.updateAuthButtons();
+                        }
                     } else {
                         console.log("Badge already awarded or other error.", result.message);
                     }
                 } catch (error) {
-                    console.error("Error awarding badge directly via API:", error);
+                    console.error("Error awarding badge:", error);
                 }
             }
 
@@ -275,7 +293,7 @@
                 if (mainView.classList.contains('hidden') && !collectionContainer.classList.contains('hidden')) {
                      collectionContainer.classList.remove('hidden');
                 } else {
-                     mainView.classList.remove('hidden');
+                    mainView.classList.remove('hidden');
                 }
             });
             
@@ -382,6 +400,9 @@
             
             /** Fetches images from Wikipedia. */
             async function fetchWikipediaImages(animalName, count, findOne) {
+                const wikipediaApiUrl = 'https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*';
+                const commonsApiUrl = 'https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*';
+
                 const searchTerms = getWikipediaSearchTerms(animalName);
                 let imageUrls = [];
 
@@ -473,7 +494,7 @@
                                         title.includes(keyword) || snippet.includes(keyword)
                                     );
                                     const isRelevant = (keywords.length > 1 && containsAllKeywords) || 
-                                                       (keywords.length === 1 && (title.includes(keywords[0]) || snippet.includes(keywords[0])));
+                                                     (keywords.length === 1 && (title.includes(keywords[0]) || snippet.includes(keywords[0])));
                                     return isImage && isRelevant && !processedTitles.has(result.title);
                                 });
                                 
@@ -534,6 +555,12 @@
 
             /** Fetches animal data from the API Ninjas endpoint via backend proxy. */
             async function fetchAnimalData(animalName) {
+                if (!BACKEND_BASE_URL) {
+                    displayMessage('Error: Backend server URL is not set.');
+                    console.error('Backend URL is not defined.');
+                    return;
+                }
+
                 loader.classList.remove('hidden');
                 resultsContainer.innerHTML = '';
                 hideMessage();
@@ -778,6 +805,7 @@
 
             /** Fetches basic animal details from Wikipedia. */
             async function fetchWikipediaAnimalDetails(animalName) {
+                const wikipediaApiUrl = 'https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*';
                 const searchTerms = getWikipediaSearchTerms(animalName); 
                 const animalCategoryKeywords = [
                     'animal', 'animals', 'mammals', 'fish', 'birds', 'reptiles', 'amphibians', 
@@ -1039,7 +1067,7 @@
                     });
                 }
             }
-             
+            
             /** Displays a message to the user. */
             function displayMessage(message) {
                 messageBox.textContent = message;
@@ -1053,12 +1081,22 @@
 
             // --- Initial Setup on page load ---
             const urlParams = new URLSearchParams(window.location.search);
-            const authToken = urlParams.get('authToken');
-            const userData = urlParams.get('userData');
-            if (authToken && userData) {
-                console.log("Auth data found in URL, setting up standalone session...");
-                localStorage.setItem('token', authToken);
-                localStorage.setItem('user', userData);
+            // CORRECTED: Get backendUrl from URL parameters
+            const backendUrlParam = urlParams.get('backendUrl');
+            const authTokenParam = urlParams.get('authToken');
+            const userDataParam = urlParams.get('userData');
+            
+            // Set the backend URL from the parameter, if available
+            if (backendUrlParam) {
+                BACKEND_BASE_URL = backendUrlParam;
+            } else {
+                console.warn("Backend URL not provided in URL parameters. API calls may fail.");
+            }
+            
+            // If auth data is in URL, store it in local storage
+            if (authTokenParam && userDataParam) {
+                localStorage.setItem('token', authTokenParam);
+                localStorage.setItem('user', userDataParam);
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
         });
